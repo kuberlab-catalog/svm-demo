@@ -11,6 +11,8 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
     dataset = '/tmp/data'
+    if not os.path.exists(dataset):
+        os.makedirs(dataset)
     train = pd.DataFrame(random.randint(low=0, high=100, size=(1000,2)),columns=['x', 'y'])
     train['label'] = train.apply(lambda v: 0 if v['x']>v['y']+(5-random.random_sample()*10) else 1,axis=1)
     test = pd.DataFrame(random.randint(low=0, high=100, size=(100,2)),columns=['x', 'y'])
