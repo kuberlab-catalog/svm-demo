@@ -1,0 +1,14 @@
+Description: Kuberlab Workflow tutorial. SVM model.
+Engine: gotpl
+Home: http://kuberlab.com
+Icon: https://storage.googleapis.com/kuberlab-images/svm.png
+Keywords:
+- kuberlab
+- tutorial
+- svm
+Maintainers:
+- Email: agunin@kuberlab.com
+  Name: Gunin Alexander
+Name: swm-workflow
+Version: 1.0.0
+Type: mlapp-v2

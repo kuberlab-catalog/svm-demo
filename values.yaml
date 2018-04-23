@@ -1,0 +1,5 @@
+storage:
+ value: default
+ wizard:
+   name: "Storage Configuration"
+   kind: cluster_storage

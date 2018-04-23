@@ -1,0 +1,213 @@
+kind: MLApp
+metadata:
+  name: tensorflow
+spec:
+  package_manager: "pip3"
+  default_mount_path: "/notebooks"
+  packages:
+    - names:
+      {{- range $i, $value := .packages }}
+      - "{{ $value }}"
+      {{- end }}
+      manager: "pip3"
+  tasks:
+  - name: dataset
+    resources:
+    - name: generate
+      replicas: 1
+      restartPolicy: Never
+      maxRestartCount: 0
+      images:
+        gpu: "kuberlab/pyspark:cpu-27-full"
+        cpu: "kuberlab/pyspark:cpu-27-full"
+      command: python generator.py --dataset svm-demo --version 1.0.$BUILD_ID
+      workdir: "$SRC_DIR"
+      resources:
+        accelerators:
+          gpu: 0
+        requests:
+          cpu: 100m
+          memory: 64Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      volumes:
+      - name: src
+  - name: train
+    resources:
+    - name: worker
+      replicas: 1
+      restartPolicy: Never
+      maxRestartCount: 0
+      allowFail: true
+      images:
+        gpu: "kuberlab/tensorflow:gpu-36-1.5.0-full"
+        cpu: "kuberlab/tensorflow:cpu-36-1.5.0-full"
+      command: python svm.py --export --l2_regularization=10 --l1_regularization=1 --steps=1000 --checkpoint_dir=$TRAINING_DIR/$BUILD_ID
+      workdir: "$SRC_DIR"
+      resources:
+        accelerators:
+          gpu: 0
+        requests:
+          cpu: 100m
+          memory: 64Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      default_volume_mapping: true
+  - name: export
+    resources:
+    - name: run
+      replicas: 1
+      restartPolicy: Never
+      maxRestartCount: 0
+      allowFail: true
+      images:
+        gpu: "kuberlab/tensorflow:gpu-36-1.5.0-full"
+        cpu: "kuberlab/tensorflow:cpu-36-1.5.0-full"
+      command: python svm.py --export_model --catalog_name my_svm_model --task_name worker --build_id 2 --checkpoint_dir=$TRAINING_DIR/$BUILD_ID
+      workdir: "$SRC_DIR"
+      resources:
+        accelerators:
+          gpu: 0
+        requests:
+          cpu: 100m
+          memory: 64Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      default_volume_mapping: true
+  - name: hparameters
+    resources:
+    - name: worker
+      replicas: 1
+      restartPolicy: Never
+      maxRestartCount: 0
+      allowFail: true
+      images:
+        gpu: "kuberlab/tensorflow:gpu-36-1.5.0-full"
+        cpu: "kuberlab/tensorflow:cpu-36-1.5.0-full"
+      command: python optimizer.py --init_steps 2 --parallel 2 --iterations 2 --method skopt
+      workdir: "$SRC_DIR"
+      resources:
+        accelerators:
+          gpu: 0
+        requests:
+          cpu: 100m
+          memory: 64Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      default_volume_mapping: true
+  - name: test-validation
+    resources:
+    - name: worker
+      replicas: 1
+      restartPolicy: Never
+      maxRestartCount: 0
+      allowFail: true
+      images:
+        gpu: "kuberlab/tensorflow:gpu-36-1.5.0-full"
+        cpu: "kuberlab/tensorflow:cpu-36-1.5.0-full"
+      command: python validate.py --build 2 --task hparameters
+      workdir: "$SRC_DIR"
+      resources:
+        accelerators:
+          gpu: 0
+        requests:
+          cpu: 100m
+          memory: 64Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      default_volume_mapping: true
+  uix:
+  - name: jupyter
+    displayName: Jupyter
+    images:
+      gpu: "kuberlab/tensorflow:gpu-36-1.5.0-full"
+      cpu: "kuberlab/tensorflow:cpu-36-1.5.0-full"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: 1000m
+        memory: 4Gi
+    ports:
+    - port: 8888
+      targetPort: 8888
+      protocol: TCP
+      name: http
+    default_volume_mapping: true
+  - name: tensorboard
+    displayName: Tensorboard
+    command: "tensorboard --logdir=$TRAINING_DIR"
+    images:
+      cpu: "kuberlab/tensorflow:cpu-36-1.5.0-base"
+    ports:
+    - port: 6006
+      targetPort: 6006
+      protocol: TCP
+      name: http
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+    volumes:
+    - name: training
+  serving:
+  - name: serving
+    displayName: Serving
+    replicas: 1
+    images:
+      gpu: "kuberlab/tensorflow-serving:gpu-27-1.5.0"
+      cpu: "kuberlab/tensorflow-serving:cpu-27-1.5.0"
+    command: "tensorflow_model_server --port=9000 --model_name=svm --model_base_path=$checkpoint_path"
+    resources:
+      accelerators:
+        gpu: 0
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    ports:
+    - port: 9000
+      targetPort: 9000
+      protocol: TCP
+      name: http
+    spec:
+      params:
+      - name: x
+        type: float
+      - name: "y"
+        type: float
+      model: svm
+    default_volume_mapping: true
+  volumes:
+  - isLibDir: false
+    name: training
+    clusterStorage: {{ .storage.value }}
+  - gitRepo:
+      repository: https://github.com/kuberlab-catalog/svm-demo
+    isLibDir: false
+    name: src
+    subPath: svm-demo/src
+  - isLibDir: true
+    name: lib
+    clusterStorage: {{ .storage.value }}
+  - isLibDir: false
+    datasetFS:
+      dataset: svm-tutorial-data
+      version: 1.0.0
+      workspace: kuberlab-demo
+    name: data
+  - isLibDir: false
+    mountPath: /notebooks
+    name: code
+    clusterStorage: {{ .storage.value }}
